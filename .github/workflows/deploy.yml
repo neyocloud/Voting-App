@@ -31,21 +31,17 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Build & push each service image
-      - name: Build & push vote
-        uses: docker/build-push-action@v6
-        with:
-          context: ./vote
-          file: ./vote/Dockerfile
-          push: true
-          tags: ${{ env.REG_USER }}/vote:latest
-
+      
       - name: Build & push result
         uses: docker/build-push-action@v6
         with:
           context: ./result
           file: ./result/Dockerfile
           push: true
-          tags: ${{ env.REG_USER }}/result:latest
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/result:latest
+          platforms: linux/amd64
+          provenance: false
+          no-cache: true
 
       - name: Build & push worker
         uses: docker/build-push-action@v6
@@ -53,7 +49,22 @@ jobs:
           context: ./worker
           file: ./worker/Dockerfile
           push: true
-          tags: ${{ env.REG_USER }}/worker:latest
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/worker:latest
+          platforms: linux/amd64
+          provenance: false
+          no-cache: true
+
+
+      - name: Build & push vote
+        uses: docker/build-push-action@v6
+        with:
+         context: ./vote
+         file: ./vote/Dockerfile
+         push: true
+         tags: ${{ secrets.DOCKERHUB_USERNAME }}/vote:latest
+         platforms: linux/amd64
+         provenance: false
+         no-cache: true
 
   deploy:
     needs: build-and-push
