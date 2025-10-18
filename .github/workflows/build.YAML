@@ -7,7 +7,7 @@ on:
         - results/**
         - vote/**
         - worker/**
-        - .github/workflows/build.YAML
+        - .github/workflows/build.yaml
         - docker-compose.yaml
 jobs:
     deploy:
