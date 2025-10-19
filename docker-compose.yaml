@@ -1,47 +1,44 @@
 services:
   vote:
-    image: ${{ secrets.DOCKERHUB_USERNAME }}/vote:latest
+    image: neyocicd/vote:latest
     depends_on:
       redis:
-       condition: service_healthy 
+        condition: service_healthy
     ports:
-      - "80:80" 
+      - "80:80"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 10s
-    volumes:
-      - ./vote:/usr/local/app  
+
   result:
-    image: ${{ secrets.DOCKERHUB_USERNAME }}/result:latest
+    image: neyocicd/result:latest
     depends_on:
-        db:
-          condition: service_healthy
-    volumes:
-      - ./result:/usr/local/app      
+      db:
+        condition: service_healthy
     ports:
       - "8091:80"
 
   worker:
-    image: ${{ secrets.DOCKERHUB_USERNAME }}/worker:latest
+    image: neyocicd/worker:latest
     depends_on:
-        db:
-          condition: service_healthy
-        redis:
-          condition: service_healthy
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   redis:
-      image: redis:6-alpine
-      volumes:
-        - redis-data:/data
-      healthcheck:
-        test: ["CMD", "redis-cli", "ping"]
-        interval: 30s
-        timeout: 10s
-        retries: 5
-        start_period: 10s
+    image: redis:6-alpine
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
 
   db:
     image: postgres:15-alpine
@@ -50,7 +47,7 @@ services:
       POSTGRES_PASSWORD: postgres
     volumes:
       - db-data:/var/lib/postgresql/data
-    
+      
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres || exit 1"]
       interval: 10s
