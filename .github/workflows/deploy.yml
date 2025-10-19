@@ -7,7 +7,7 @@ on:
       - "vote/**"
       - "result/**"
       - "worker/**"
-      - "compose/docker-compose.yml"
+      - "docker-compose.yaml"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
@@ -31,7 +31,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Build & push each service image
-
+      
       - name: Build & push result
         uses: docker/build-push-action@v6
         with:
@@ -53,7 +53,7 @@ jobs:
           platforms: linux/amd64
           provenance: false
           no-cache: true
-          
+
 
       - name: Build & push vote
         uses: docker/build-push-action@v6
@@ -70,42 +70,37 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Ensure remote folder exists
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            sudo mkdir -p /opt/app/compose
-            sudo chown $USER:$USER /opt/app/compose
+      - uses: actions/checkout@v4
 
-      - name: Copy compose file to EC2
-        uses: appleboy/scp-action@v0.1.7
+      # 1) Load your EC2 private key
+      - name: set up ssh
+        uses: webfactory/ssh-agent@v0.9.0
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "compose/docker-compose.yml"
-          target: "/opt/app/compose"
-          overwrite: true
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
-      - name: SSH & deploy
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
+      # 2) Copy docker-compose to the server
+      - name: copy docker-compose file
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} 'sudo mkdir -p /opt/app && sudo chown $USER:$USER /opt/app'
+          scp -o StrictHostKeyChecking=no docker-compose.yaml ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/app/docker-compose.yaml
+
+      # 3) SSH and run docker compose
+      - name: run docker-compose up
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} <<'EOSSH'
             set -e
-            COMPOSE=/opt/app/compose/docker-compose.yml
-            # Ensure docker compose plugin exists (first run only)
-            docker compose version >/dev/null 2>&1 || {
-              sudo apt-get update
+            COMPOSE=/opt/app/docker-compose.yaml
+
+            # install compose plugin if missing
+            if ! docker compose version >/dev/null 2>&1; then
+              sudo apt-get update -y
               sudo apt-get install -y docker-compose-plugin
-            }
-            docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
+            fi
+
+            docker login -u '${{ secrets.DOCKERHUB_USERNAME }}' -p '${{ secrets.DOCKERHUB_TOKEN }}'
             docker compose -f "$COMPOSE" pull
             docker compose -f "$COMPOSE" up -d
             docker compose -f "$COMPOSE" ps
             docker system prune -f
+          EOSSH
+
