@@ -64,28 +64,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Load your EC2 private key into the SSH agent
+
       - name: Set up SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
-      # Ensure remote dir exists and copy docker-compose.yaml to /opt/app
+
       - name: Prepare remote & copy compose
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} 'sudo mkdir -p /opt/app && sudo chown $USER:$USER /opt/app'
           scp -o StrictHostKeyChecking=no docker-compose.yaml ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/app/docker-compose.yaml
 
-      # SSH into EC2, install Docker/Compose if needed, login & deploy
+
       - name: Deploy on EC2
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} <<'EOSSH'
-            set -e
+            set -euo pipefail
             sudo mkdir -p /opt/app
             sudo chown $USER:$USER /opt/app
             cd /opt/app
 
-            # --- Install Docker Engine + Compose v2 from Docker's repo (Ubuntu 24.04 "noble") ---
+            # Install Docker Engine + Compose v2 from Docker's repo (Ubuntu 24.04 "noble")
             if ! command -v docker >/dev/null 2>&1; then
               sudo apt-get update -y
               sudo apt-get install -y ca-certificates curl gnupg
@@ -99,12 +99,14 @@ jobs:
               sudo systemctl enable --now docker
             fi
 
-            # If Docker exists but Compose plugin is missing, add it
-            if ! docker compose version >/dev/null 2>&1; then
+            # Ensure Compose plugin exists
+            if ! sudo docker compose version >/dev/null 2>&1; then
               sudo apt-get update -y
-              sudo apt-get install -y docker-compose-plugin
+              sudo apt-get install -y docker-compose-plugin || true
             fi
-            # ------------------------------------------------------------------------------
+
+            # Prove Docker access with sudo
+            sudo -n docker ps >/dev/null
 
             # Login & deploy
             echo '${{ secrets.DOCKERHUB_TOKEN }}' | sudo docker login -u '${{ secrets.DOCKERHUB_USERNAME }}' --password-stdin
@@ -112,4 +114,4 @@ jobs:
             sudo docker compose -f docker-compose.yaml up -d
             sudo docker compose -f docker-compose.yaml ps
           EOSSH
-
+          
