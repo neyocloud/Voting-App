@@ -31,7 +31,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Build & push each service image
-      
+
       - name: Build & push result
         uses: docker/build-push-action@v6
         with:
@@ -53,23 +53,33 @@ jobs:
           platforms: linux/amd64
           provenance: false
           no-cache: true
-
+          
 
       - name: Build & push vote
         uses: docker/build-push-action@v6
         with:
-         context: ./vote
-         file: ./vote/Dockerfile
-         push: true
-         tags: ${{ secrets.DOCKERHUB_USERNAME }}/vote:latest
-         platforms: linux/amd64
-         provenance: false
-         no-cache: true
+          context: ./vote
+          file: ./vote/Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/vote:latest
+          platforms: linux/amd64
+          provenance: false
+          no-cache: true
 
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
+      - name: Ensure remote folder exists
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            sudo mkdir -p /opt/app/compose
+            sudo chown $USER:$USER /opt/app/compose
+
       - name: Copy compose file to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -77,7 +87,8 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           source: "compose/docker-compose.yml"
-          target: "/opt/app"
+          target: "/opt/app/compose"
+          overwrite: true
 
       - name: SSH & deploy
         uses: appleboy/ssh-action@v1.2.0
@@ -86,8 +97,15 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            sudo mkdir -p /opt/app && cd /opt/app
+            set -e
+            COMPOSE=/opt/app/compose/docker-compose.yml
+            # Ensure docker compose plugin exists (first run only)
+            docker compose version >/dev/null 2>&1 || {
+              sudo apt-get update
+              sudo apt-get install -y docker-compose-plugin
+            }
             docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
-            docker compose -f docker-compose.yml pull
-            docker compose -f docker-compose.yml up -d
+            docker compose -f "$COMPOSE" pull
+            docker compose -f "$COMPOSE" up -d
+            docker compose -f "$COMPOSE" ps
             docker system prune -f

@@ -1,9 +1,6 @@
 services:
   vote:
-    build: 
-      context: ./vote
-      dockerfile: Dockerfile
-      target: dev
+    image: ${{ secrets.DOCKERHUB_USERNAME }}/vote:latest
     depends_on:
       redis:
        condition: service_healthy 
@@ -18,9 +15,7 @@ services:
     volumes:
       - ./vote:/usr/local/app  
   result:
-    build: 
-      context: ./result
-      dockerfile: Dockerfile
+    image: ${{ secrets.DOCKERHUB_USERNAME }}/result:latest
     depends_on:
         db:
           condition: service_healthy
@@ -30,9 +25,7 @@ services:
       - "8091:80"
 
   worker:
-    build: 
-      context: ./worker
-      dockerfile: Dockerfile
+    image: ${{ secrets.DOCKERHUB_USERNAME }}/worker:latest
     depends_on:
         db:
           condition: service_healthy
