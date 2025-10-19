@@ -70,48 +70,39 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
-
-      - name: Prepare remote & copy compose
+      - name: Copy docker-compose.yaml to EC2
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} 'sudo mkdir -p /opt/app && sudo chown $USER:$USER /opt/app'
           scp -o StrictHostKeyChecking=no docker-compose.yaml ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/app/docker-compose.yaml
 
-
-      - name: Deploy on EC2
+      - name: Deploy on EC2 (sudo docker)
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} <<'EOSSH'
             set -euo pipefail
-            sudo mkdir -p /opt/app
-            sudo chown $USER:$USER /opt/app
-            cd /opt/app
 
-            # Install Docker Engine + Compose v2 from Docker's repo (Ubuntu 24.04 "noble")
+
+            # Install Docker Engine + Compose on Ubuntu 24.04 if missing
             if ! command -v docker >/dev/null 2>&1; then
               sudo apt-get update -y
               sudo apt-get install -y ca-certificates curl gnupg
               sudo install -m 0755 -d /etc/apt/keyrings
               curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
               sudo chmod a+r /etc/apt/keyrings/docker.gpg
-              echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu noble stable" \
-                | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+              echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu noble stable" | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
               sudo apt-get update -y
               sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
               sudo systemctl enable --now docker
             fi
 
-            # Ensure Compose plugin exists
-            if ! sudo docker compose version >/dev/null 2>&1; then
-              sudo apt-get update -y
-              sudo apt-get install -y docker-compose-plugin || true
-            fi
+            # Confirm daemon access (via sudo)
+            sudo -n docker version >/dev/null
 
-            # Prove Docker access with sudo
-            sudo -n docker ps >/dev/null
+            cd /opt/app
 
-            # Login & deploy
+            # Login & deploy (all docker commands via sudo)
             echo '${{ secrets.DOCKERHUB_TOKEN }}' | sudo docker login -u '${{ secrets.DOCKERHUB_USERNAME }}' --password-stdin
             sudo docker compose -f docker-compose.yaml pull
             sudo docker compose -f docker-compose.yaml up -d
             sudo docker compose -f docker-compose.yaml ps
           EOSSH
-          
+
