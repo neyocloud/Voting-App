@@ -11,18 +11,13 @@ on:
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
-env:
-  REG_USER: ${{ secrets.DOCKERHUB_USERNAME }}
-
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -30,8 +25,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Build & push each service image
-      
       - name: Build & push result
         uses: docker/build-push-action@v6
         with:
@@ -54,7 +47,6 @@ jobs:
           provenance: false
           no-cache: true
 
-
       - name: Build & push vote
         uses: docker/build-push-action@v6
         with:
@@ -72,35 +64,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1) Load your EC2 private key
-      - name: set up ssh
+      # 1) Load your EC2 private key into the SSH agent
+      - name: Set up SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
-      # 2) Copy docker-compose to the server
-      - name: copy docker-compose file
+      # 2) Ensure target dir and copy compose file to /opt/app
+      - name: Prepare remote & copy compose
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} 'sudo mkdir -p /opt/app && sudo chown $USER:$USER /opt/app'
           scp -o StrictHostKeyChecking=no docker-compose.yaml ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/app/docker-compose.yaml
 
-      # 3) SSH and run docker compose
-      - name: run docker-compose up
+      # 3) SSH and deploy with Docker Compose
+      - name: Deploy on EC2
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} <<'EOSSH'
             set -e
-            COMPOSE=/opt/app/docker-compose.yaml
+            cd /opt/app
 
-            # install compose plugin if missing
-            if ! docker compose version >/dev/null 2>&1; then
+            # Ensure Docker Engine
+            if ! command -v docker >/dev/null 2>&1; then
               sudo apt-get update -y
-              sudo apt-get install -y docker-compose-plugin
+              sudo apt-get install -y docker.io curl
+              sudo systemctl enable --now docker
             fi
 
-            docker login -u '${{ secrets.DOCKERHUB_USERNAME }}' -p '${{ secrets.DOCKERHUB_TOKEN }}'
-            docker compose -f "$COMPOSE" pull
-            docker compose -f "$COMPOSE" up -d
-            docker compose -f "$COMPOSE" ps
-            docker system prune -f
+            # Ensure Docker Compose v2 (standalone binary)
+            if ! docker compose version >/dev/null 2>&1; then
+              ARCH=$(uname -m)
+              BIN="docker-compose-linux-x86_64"
+              if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then BIN="docker-compose-linux-aarch64"; fi
+              sudo mkdir -p /usr/local/lib/docker/cli-plugins
+              sudo curl -SL "https://github.com/docker/compose/releases/download/v2.29.7/$BIN" \
+                -o /usr/local/lib/docker/cli-plugins/docker-compose
+              sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+            fi
+
+            # Login & run
+            sudo docker login -u '${{ secrets.DOCKERHUB_USERNAME }}' -p '${{ secrets.DOCKERHUB_TOKEN }}'
+            sudo docker compose -f docker-compose.yaml pull
+            sudo docker compose -f docker-compose.yaml up -d
+            sudo docker compose -f docker-compose.yaml ps
           EOSSH
 
