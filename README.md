@@ -63,3 +63,69 @@ The voting application only accepts one vote per client browser. It does not reg
 This isn't an example of a properly architected perfectly designed distributed app... it's just a simple
 example of the various types of pieces and languages you might see (queues, persistent data, etc), and how to
 deal with them in Docker at a basic level.
+
+
+
+
+
+graph LR
+    %% Users
+    U[End User\n(Web Browser)]
+
+    %% App Tiers
+    subgraph Frontend_Tier[Frontend Tier]
+        FE[Frontend Container\n(React + Nginx)]
+    end
+
+    subgraph Backend_Tier[Backend Tier]
+        BE[Backend Container\n(Node.js/Express API)]
+    end
+
+    subgraph Data_Tier[Data Tier]
+        DB[(MongoDB Container)]
+    end
+
+    %% CI/CD & DevSecOps
+    subgraph DevSecOps[CI/CD & DevSecOps]
+        GIT[Git Repository\n(GitHub/GitLab)]
+        J[Jenkins]
+        SQ[SonarQube]
+        REG[(Docker Registry)]
+    end
+
+    %% Monitoring / Observability
+    subgraph Monitoring[Monitoring & Observability]
+        P[Prometheus]
+        NE[Node Exporter]
+        GRAF[Grafana]
+    end
+
+    %% User Flow
+    U -->|HTTP/HTTPS| FE
+    FE -->|REST API Calls| BE
+    BE -->|DB Queries| DB
+
+    %% CI/CD Flow
+    GIT -->|Push / Webhook| J
+    J -->|Checkout Code| GIT
+    J -->|SAST / Code Analysis| SQ
+    SQ -->|Quality Gate Result| J
+
+    J -->|Build Images| J
+    J -->|Push Images| REG
+    J -->|Deploy Images\n(Docker/Kubernetes)| FE
+    J -->|Deploy Images\n(Docker/Kubernetes)| BE
+    J -->|Deploy DB Manifests| DB
+
+    %% Monitoring Flow
+    NE -->|Host Metrics| P
+    P -->|Scrape Metrics| BE
+    P -->|Scrape Metrics| FE
+    P -->|Scrape Metrics| DB
+
+    GRAF -->|Query Metrics| P
+
+    %% Feedback to DevOps
+    GRAF -->|Dashboards & Alerts| J
+    GRAF -->|Dashboards & Alerts| DevOps[(DevOps/Engineers)]
+
